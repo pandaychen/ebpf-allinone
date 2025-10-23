@@ -12,6 +12,7 @@ struct data_t {
     u32 pid;
     char comm[TASK_COMM_LEN];
     int retval;
+    char filename[ARGSIZE];
     unsigned int args_size;
     char argv[FULL_MAX_ARGS_ARR];
 };
@@ -26,13 +27,14 @@ static int __bpf_read_arg_str(struct data_t *data, const char *ptr)
  if (data->args_size > LAST_ARG) {
   return -1;
  }
- /*int bpf_probe_read_user_str(void *dst, int size, const void *src)
+  /*int bpf_probe_read_user_str(void *dst, int size, const void *src)
     - 成功返回包含结尾NULL（'\0'）字符的字符串长度（>0）
     - 出错返回负值（<0）
     该函数将用户地址空间中以NULL结尾的字符串复制到BPF栈中，以便BPF后续处理
     若字符串长度小于size参数，目标缓冲区不会用额外的NULL字节填充；
     若字符串长度大于size，则仅复制size-1个字节，并将最后一个字节设为NULL
  */
+
  int ret = bpf_probe_read_user_str(&data->argv[data->args_size], ARGSIZE,
        (void *)ptr);
  if (ret > ARGSIZE || ret < 0) {
@@ -52,7 +54,6 @@ static int __bpf_read_arg_str(struct data_t *data, const char *ptr)
  return 0;
 }
 
-
 /*
 TRACEPOINT_PROBE：这是一个宏，用于对由category:event定义的跟踪点进行插桩
 探针函数名为tracepoint____
@@ -71,7 +72,11 @@ TRACEPOINT_PROBE(syscalls, sys_enter_execve)
     u32 pid = bpf_get_current_pid_tgid();
     data.pid = pid;
     bpf_get_current_comm(&data.comm, sizeof(data.comm));
-    
+ 	
+    // 直接从args中获取filename
+    bpf_probe_read_user_str(&data.filename, sizeof(data.filename),
+                           (void *)args->filename);
+
     // 获取第一个参数（即可执行文件的名字）
     if (__bpf_read_arg_str(&data, (const char *)argv[0]) < 0) {
         goto out;
