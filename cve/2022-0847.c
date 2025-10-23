@@ -49,11 +49,13 @@ static void prepare_pipe(int p[2])
 {
    if (pipe(p)) abort();
 
+   // 获取pipe可使用的最大页面数量
    const unsigned pipe_size = fcntl(p[1], F_GETPIPE_SZ);
    static char buffer[4096];
 
    /* fill the pipe completely; each pipe_buffer will now have
       the PIPE_BUF_FLAG_CAN_MERGE flag */
+   // 任意数据填充
    for (unsigned r = pipe_size; r > 0;) {
         unsigned n = r > sizeof(buffer) ? sizeof(buffer) : r;
         write(p[1], buffer, n);
@@ -62,6 +64,7 @@ static void prepare_pipe(int p[2])
 
    /* drain the pipe, freeing all pipe_buffer instances (but
       leaving the flags initialized) */
+   // 清空pipe
    for (unsigned r = pipe_size; r > 0;) {
         unsigned n = r > sizeof(buffer) ? sizeof(buffer) : r;
         read(p[0], buffer, n);
@@ -99,6 +102,7 @@ int main(int argc, char **argv)
    }
 
    /* open the input file and validate the specified offset */
+   // 只读打开目标文件
    const int fd = open(path, O_RDONLY); // yes, read-only! :-)
    if (fd < 0) {
         perror("open failed");
@@ -131,6 +135,8 @@ int main(int argc, char **argv)
       since copy_page_to_iter_pipe() does not initialize the
       "flags", PIPE_BUF_FLAG_CAN_MERGE is still set */
    --offset;
+   // splice：将fd指向文件的第一个字节偏移设置为pipe buf的写入位置
+   // 仅关联，不写入
    ssize_t nbytes = splice(fd, &offset, p[1], NULL, 1, 0);
    if (nbytes < 0) {
         perror("splice failed");
@@ -144,7 +150,11 @@ int main(int argc, char **argv)
    /* the following write will not create a new pipe_buffer, but
       will instead write into the page cache, because of the
       PIPE_BUF_FLAG_CAN_MERGE flag */
+   // write()写入任意数据到pipe
+   // 本质上是写page cache
    nbytes = write(p[1], data, data_size);
+
+   // 写入成功
    if (nbytes < 0) {
         perror("write failed");
         return EXIT_FAILURE;
